@@ -1,0 +1,552 @@
+<!--
+Process Management Visualiser
+Single-file prototype (index.html) that contains HTML, CSS and JS.
+If you want separate files, split as follows:
+- index.html : keep everything inside <body>
+    <button id="generateGantt" class="btn-primary">Generate Gantt Chart</button>
+ and links to styles.css and script.js
+- styles.css  : copy contents of the <style>...</style> block
+- script.js   : copy contents of the <script>...</script> block
+
+Open index.html in a browser to run.
+-->
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Process Management Visualiser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#0f1724;
+      --card:#0b1220;
+      --muted:#94a3b8;
+      --accent:#60a5fa;
+      --accent-2:#7c3aed;
+      --glass: rgba(255,255,255,0.03);
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;
+      background: radial-gradient(1200px 600px at 10% 10%, rgba(124,58,237,0.08), transparent),
+                  radial-gradient(900px 500px at 90% 90%, rgba(96,165,250,0.04), transparent),
+                  var(--bg);
+      color:#e6eef8;
+      padding:28px;
+    }
+
+    .app{
+      max-width:1200px;
+      margin:0 auto;
+      display:grid;
+      grid-template-columns: 360px 1fr;
+      gap:20px;
+    }
+
+    .panel{
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius:14px;
+      padding:18px;
+      box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+      border:1px solid rgba(255,255,255,0.03);
+    }
+
+    h1{font-size:18px;margin:0 0 10px 0}
+    .subtitle{color:var(--muted); font-size:13px; margin-bottom:14px}
+
+    /* Left column */
+    .controls .row{display:flex;gap:8px;margin-bottom:10px}
+    .btn{background:linear-gradient(90deg,var(--accent),var(--accent-2));border:none;color:white;padding:10px 12px;border-radius:10px;cursor:pointer;font-weight:600;box-shadow:0 6px 18px rgba(96,165,250,0.12);transition:transform .12s ease, box-shadow .12s ease}
+    .btn:active{transform:translateY(1px)}
+    .btn.ghost{background:transparent;border:1px dashed rgba(255,255,255,0.04);color:var(--muted);box-shadow:none}
+
+    .form{display:grid;gap:8px}
+    label{font-size:12px;color:var(--muted)}
+    input[type=text], input[type=number], select{background:var(--glass);border:1px solid rgba(255,255,255,0.02);padding:8px;border-radius:8px;color:inherit}
+
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:8px;text-align:left;font-size:13px}
+    th{color:var(--muted);font-weight:600}
+    tr{border-radius:8px}
+
+    .process-badge{display:inline-block;padding:6px 8px;border-radius:8px;font-weight:700;font-size:12px}
+    .small{font-size:12px;color:var(--muted)}
+
+    /* Right column */
+    .visual-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .timeline-card{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.01));padding:12px;border-radius:12px}
+
+    .gantt{
+      margin-top:12px;
+      overflow:auto;
+      padding:12px;
+      background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.00));
+      border-radius:10px;border:1px solid rgba(255,255,255,0.02)
+    }
+
+    .gantt-grid{display:grid;grid-auto-rows:36px;gap:8px}
+    .gantt-row{position:relative;min-width:900px}
+    .gantt-label{position:absolute;left:0;top:0;width:120px;color:var(--muted);font-size:13px}
+    .gantt-track{margin-left:120px;height:36px;border-radius:8px;background:linear-gradient(90deg, rgba(255,255,255,0.01), transparent);display:flex;align-items:center}
+
+    .bar{position:absolute;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#021124;font-weight:700;cursor:pointer;transform:translateY(2px);box-shadow:0 6px 18px rgba(2,6,23,0.6);transition:transform .12s ease, opacity .12s ease}
+    .bar:hover{transform:translateY(0) scale(1.02)}
+
+    .time-scale{display:flex;gap:10px;padding-left:120px;padding-bottom:8px;color:var(--muted);font-size:12px}
+
+    .controls-bottom{display:flex;gap:8px;align-items:center}
+
+    /* modal */
+    .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.6);display:flex;align-items:center;justify-content:center;z-index:60}
+    .modal{background:var(--card);padding:18px;border-radius:12px;width:420px;border:1px solid rgba(255,255,255,0.03)}
+
+    /* small helpers */
+    .muted{color:var(--muted)}
+    .flex{display:flex;align-items:center}
+
+    /* animations */
+    .pulse{animation:pulse 2s infinite}
+    @keyframes pulse{0%{box-shadow:0 6px 18px rgba(124,58,237,0.06)}50%{box-shadow:0 16px 30px rgba(124,58,237,0.12)}100%{box-shadow:0 6px 18px rgba(124,58,237,0.06)}}
+
+    /* responsive */
+    @media (max-width:980px){.app{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="panel controls">
+      <h1 id="projectTitle" class="animated-title">Process Management Visualiser</h1>
+      <div class="subtitle">Web-based interactive simulation — add processes, choose algorithm, watch the Gantt chart animate.</div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="small">Algorithm</div>
+        <select id="algoSelect" style="width:180px">
+          <option value="fcfs">FCFS (First Come First Served)</option>
+          <option value="sjf">SJF (Shortest Job First)</option>
+          <option value="rr">Round Robin</option>
+        </select>
+      </div>
+
+      <div class="form">
+        <label>Process Name</label>
+        <input id="pname" type="text" placeholder="e.g. P1" />
+        <div style="display:flex;gap:8px">
+          <div style="flex:1">
+            <label>Arrival Time</label>
+            <input id="parr" type="number" min="0" value="0" />
+          </div>
+          <div style="flex:1">
+            <label>Burst Time</label>
+            <input id="pburst" type="number" min="1" value="3" />
+          </div>
+        </div>
+        <label>Color (visual)</label>
+        <input id="pcolor" type="color" value="#60a5fa" />
+
+        <div class="row">
+          <button id="addBtn" class="btn">Add Process</button>
+          <button id="clearBtn" class="btn ghost">Clear All</button>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+          <div>
+            <div class="small">Time Quantum (for RR)</div>
+            <input id="quantum" type="number" min="1" value="2" style="width:90px" />
+          </div>
+
+          <div style="text-align:right">
+            <div class="small">Total CPU Time</div>
+            <div id="totalTime" style="font-weight:800;font-size:18px">0</div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <table id="ptable">
+            <thead><tr><th>PID</th><th>Arr</th><th>Burst</th><th>Rem</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:10px" class="controls-bottom">
+          <button id="simulateBtn" class="btn">Simulate</button>
+          <button id="playBtn" class="btn ghost">Play</button>
+          <button id="stepBtn" class="btn ghost">Step</button>
+          <div style="margin-left:auto;color:var(--muted);font-size:13px">Status: <span id="status">Idle</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="visual-top">
+        <div>
+          <h1 style="font-size:16px;margin-bottom:6px">Gantt Timeline</h1>
+          <div class="small">Interactive chart — click bars to view details & highlight.</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button id="zoomIn" class="btn ghost">Zoom +</button>
+          <button id="zoomOut" class="btn ghost">Zoom -</button>
+        </div>
+      </div>
+
+      <div class="timeline-card">
+        <div class="gantt" id="ganttContainer">
+          <div class="time-scale" id="timeScale"></div>
+          <div class="gantt-grid" id="ganttGrid"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
+        <div class="small">Legend:</div>
+        <div id="legend" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- modal for process detail -->
+  <div id="modalRoot" style="display:none"></div>
+
+  <script>
+    // ---------------------------
+    // Data structures & helpers
+    // ---------------------------
+    let processes = []; // {id,name,arrival,burst,remaining,color}
+    let schedule = [];  // {pid,start,duration}
+    let totalTime = 0;
+    let zoom = 40; // pixels per time unit
+    let playIndex = 0;
+    let playing = false;
+    let algo = 'fcfs';
+
+    const ptable = document.querySelector('#ptable tbody');
+    const totalTimeEl = document.getElementById('totalTime');
+    const ganttGrid = document.getElementById('ganttGrid');
+    const timeScale = document.getElementById('timeScale');
+    const legend = document.getElementById('legend');
+    const status = document.getElementById('status');
+
+    // UI hooks
+    document.getElementById('addBtn').addEventListener('click', addProcess);
+    document.getElementById('clearBtn').addEventListener('click', ()=>{processes=[];renderTable();clearSchedule();});
+    document.getElementById('simulateBtn').addEventListener('click', ()=>{algo = document.getElementById('algoSelect').value; computeSchedule();renderGantt();});
+    document.getElementById('playBtn').addEventListener('click', togglePlay);
+    document.getElementById('stepBtn').addEventListener('click', step);
+    document.getElementById('zoomIn').addEventListener('click', ()=>{zoom+=8;renderGantt();});
+    document.getElementById('zoomOut').addEventListener('click', ()=>{zoom=Math.max(12,zoom-8);renderGantt();});
+
+    function addProcess(){
+      const name = document.getElementById('pname').value.trim() || ('P'+(processes.length+1));
+      const arrival = Math.max(0,Math.floor(Number(document.getElementById('parr').value) || 0));
+      const burst = Math.max(1,Math.floor(Number(document.getElementById('pburst').value) || 1));
+      const color = document.getElementById('pcolor').value;
+      const id = 'P'+(processes.length+1);
+      processes.push({id,name,arrival,burst,remaining:burst,color});
+      renderTable();
+      renderLegend();
+    }
+
+    function renderTable(){
+      ptable.innerHTML='';
+      processes.sort((a,b)=>a.arrival - b.arrival || a.id.localeCompare(b.id));
+      for(let p of processes){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><span class=process-badge style='background:${p.color};color:#fff'>${p.id}</span></td>
+                        <td>${p.arrival}</td>
+                        <td>${p.burst}</td>
+                        <td>${p.remaining}</td>
+                        <td><button class='btn ghost' data-id='${p.id}'>Edit</button></td>`;
+        ptable.appendChild(tr);
+      }
+      // attach edit handlers
+      document.querySelectorAll('button[data-id]').forEach(b=>b.addEventListener('click', (e)=>{openEdit(e.target.dataset.id)}));
+    }
+
+    function openEdit(pid){
+      const p = processes.find(x=>x.id===pid);
+      if(!p) return;
+      showModal(`<h3>${p.id} Details</h3>
+        <div style='display:grid;gap:8px'><label>Name</label><input id='mname' value='${p.name}' />
+        <label>Arrival</label><input id='marr' type='number' value='${p.arrival}'/>
+        <label>Burst</label><input id='mburst' type='number' value='${p.burst}'/>
+        <label>Color</label><input id='mcolor' type='color' value='${p.color}' />
+        <div style='display:flex;gap:8px;margin-top:8px;justify-content:flex-end'>
+        <button id='msave' class='btn'>Save</button><button id='mdelete' class='btn ghost'>Delete</button></div></div>
+      `);
+      document.getElementById('msave').addEventListener('click', ()=>{
+        p.name = document.getElementById('mname').value;
+        p.arrival = Number(document.getElementById('marr').value);
+        p.burst = Number(document.getElementById('mburst').value);
+        p.remaining = p.burst;
+        p.color = document.getElementById('mcolor').value;
+        closeModal(); renderTable(); renderLegend();
+      });
+      document.getElementById('mdelete').addEventListener('click', ()=>{processes = processes.filter(x=>x.id!==p.id);closeModal();renderTable();renderLegend();});
+    }
+
+    function showModal(inner){
+      const root = document.getElementById('modalRoot');
+      root.innerHTML = `<div class='modal-backdrop' id='mb'><div class='modal'>${inner}</div></div>`;
+      root.style.display='block';
+      document.getElementById('mb').addEventListener('click',(e)=>{if(e.target.id==='mb') closeModal()});
+    }
+    function closeModal(){document.getElementById('modalRoot').style.display='none';document.getElementById('modalRoot').innerHTML='';}
+
+    function clearSchedule(){schedule=[];totalTime=0;renderGantt();}
+
+    // ---------------------------
+    // Scheduling algorithms
+    // ---------------------------
+    function computeSchedule(){
+      schedule=[]; totalTime=0; playIndex=0; playing=false; status.textContent='Idle';
+      algo = document.getElementById('algoSelect').value;
+
+      // make deep copy
+      const proc = processes.map(p=>({...p})).sort((a,b)=>a.arrival - b.arrival || a.id.localeCompare(b.id));
+
+      if(proc.length===0){renderGantt(); return}
+
+      if(algo==='fcfs'){
+        let time = Math.min(...proc.map(p=>p.arrival));
+        for(let p of proc){
+          if(time < p.arrival) time = p.arrival; // wait
+          schedule.push({pid:p.id, name:p.name, start:time, duration:p.burst, color:p.color});
+          time += p.burst;
+        }
+        totalTime = schedule[schedule.length-1].start + schedule[schedule.length-1].duration;
+      }
+      else if(algo==='sjf'){
+        // non-preemptive SJF
+        let time = 0;
+        const ready = [];
+        const q = [...proc];
+        time = Math.min(...q.map(p=>p.arrival));
+        while(q.length || ready.length){
+          while(q.length && q[0].arrival <= time) ready.push(q.shift());
+          if(!ready.length){time = q[0].arrival; continue}
+          ready.sort((a,b)=>a.burst - b.burst || a.arrival - b.arrival);
+          const p = ready.shift();
+          schedule.push({pid:p.id,name:p.name,start:time,duration:p.burst,color:p.color});
+          time += p.burst;
+        }
+        totalTime = schedule[schedule.length-1].start + schedule[schedule.length-1].duration;
+      }
+      else if(algo==='rr'){
+        // round-robin
+        const q = processes.map(p=>({id:p.id,arrival:p.arrival,remaining:p.burst, color:p.color, name:p.name})).sort((a,b)=>a.arrival - b.arrival || a.id.localeCompare(b.id));
+        const quantum = Math.max(1, Number(document.getElementById('quantum').value) || 1);
+        let time = Math.min(...q.map(p=>p.arrival));
+        const queue = [];
+        while(q.length || queue.length){
+          while(q.length && q[0].arrival <= time) queue.push(q.shift());
+          if(!queue.length){time = q[0].arrival; continue}
+          const cur = queue.shift();
+          const run = Math.min(quantum, cur.remaining);
+          schedule.push({pid:cur.id,name:cur.name,start:time,duration:run,color:cur.color});
+          time += run; cur.remaining -= run;
+          while(q.length && q[0].arrival <= time) queue.push(q.shift());
+          if(cur.remaining>0) queue.push(cur);
+        }
+        totalTime = schedule.length ? (schedule[schedule.length-1].start + schedule[schedule.length-1].duration) : 0;
+      }
+
+      totalTimeEl.textContent = totalTime;
+      status.textContent = 'Ready to play';
+    }
+
+    // ---------------------------
+    // Gantt render
+    // ---------------------------
+    function renderLegend(){
+      legend.innerHTML='';
+      for(let p of processes){
+        const el = document.createElement('div');
+        el.style.display='flex';el.style.alignItems='center';el.style.gap='8px';el.style.fontSize='13px';
+        el.innerHTML = `<div style='width:12px;height:12px;border-radius:3px;background:${p.color}'></div><div class='muted'>${p.id}</div>`;
+        legend.appendChild(el);
+      }
+    }
+
+    function renderGantt(){
+      // grid rows => unique pids in schedule OR all processes
+      ganttGrid.innerHTML='';
+      timeScale.innerHTML='';
+      renderLegend();
+
+      const pids = processes.map(p=>p.id);
+      const rows = pids.length ? pids : ['No processes'];
+
+      // time scale
+      const maxT = Math.max(totalTime, 0);
+      for(let t=0;t<=maxT;t++){
+        const el = document.createElement('div'); el.textContent = t; el.style.minWidth = (zoom)+'px'; el.style.textAlign='center'; timeScale.appendChild(el);
+      }
+
+      // rows
+      for(let i=0;i<rows.length;i++){
+        const rid = rows[i];
+        const row = document.createElement('div'); row.className='gantt-row';
+        const label = document.createElement('div'); label.className='gantt-label'; label.textContent = rid;
+        row.appendChild(label);
+        const track = document.createElement('div'); track.className='gantt-track'; track.style.minWidth = (Math.max(1,totalTime)*zoom)+'px';
+        // add bars for schedule segments matching this pid
+        const parts = schedule.filter(s=>s.pid===rid);
+        for(let seg of parts){
+          const bar = document.createElement('div');
+          bar.className='bar';
+          bar.style.left = (seg.start*zoom + 4) + 'px';
+          bar.style.width = Math.max(24, seg.duration*zoom - 6) + 'px';
+          bar.style.background = seg.color;
+          bar.style.color = '#fff';
+          bar.textContent = seg.name + (seg.duration>1?` (${seg.duration})`:'');
+          bar.dataset.pid = seg.pid; bar.dataset.start = seg.start; bar.dataset.duration = seg.duration;
+          bar.addEventListener('click', ()=>{inspectSegment(seg)});
+          track.appendChild(bar);
+        }
+
+        row.appendChild(track);
+        ganttGrid.appendChild(row);
+      }
+    }
+
+    function inspectSegment(seg){
+      showModal(`<h3>${seg.name} (${seg.pid})</h3>
+        <div style='display:grid;gap:8px'>
+          <div class='muted'>Start: <strong>${seg.start}</strong></div>
+          <div class='muted'>Duration: <strong>${seg.duration}</strong></div>
+          <div style='height:8px'></div>
+          <div style='display:flex;gap:8px;justify-content:flex-end'><button class='btn' onclick='closeModal()'>Close</button></div>
+        </div>
+      `);
+    }
+
+    // ---------------------------
+    // Play/Step simulation
+    // ---------------------------
+    function togglePlay(){
+      if(schedule.length===0) return;
+      playing = !playing;
+      document.getElementById('playBtn').textContent = playing? 'Pause':'Play';
+      if(playing) runPlay();
+    }
+
+    function runPlay(){
+      if(!playing) return;
+      if(playIndex >= schedule.length){playing=false;document.getElementById('playBtn').textContent='Play';status.textContent='Finished';return}
+      const seg = schedule[playIndex];
+      highlightSegment(playIndex);
+      status.textContent = `Running ${seg.name} (${seg.pid}) @ t=${seg.start}`;
+      // animate highlighting for duration scaled
+      setTimeout(()=>{playIndex++; runPlay();}, Math.max(300, seg.duration*450));
+    }
+
+    function step(){
+      if(schedule.length===0) return;
+      if(playIndex >= schedule.length){status.textContent='Finished';return}
+      const seg = schedule[playIndex];
+      highlightSegment(playIndex);
+      status.textContent = `Stepped ${seg.name} (${seg.pid}) @ t=${seg.start}`;
+      playIndex++;
+    }
+
+    function highlightSegment(idx){
+      // clear prev
+      document.querySelectorAll('.bar').forEach(b=>b.style.opacity=0.6);
+      const bars = document.querySelectorAll('.gantt .bar');
+      if(bars[idx]){
+        bars[idx].style.opacity=1; bars[idx].style.transform='scale(1.03)';
+        setTimeout(()=>{bars[idx].style.transform='';},500);
+      }
+    }
+
+    // initial demo processes
+    (function seed(){
+      processes = [
+        {id:'P1',name:'P1',arrival:0,burst:4,remaining:4,color:'#60a5fa'},
+        {id:'P2',name:'P2',arrival:1,burst:3,remaining:3,color:'#7c3aed'},
+        {id:'P3',name:'P3',arrival:2,burst:2,remaining:2,color:'#34d399'},
+      ]; renderTable(); renderLegend();
+    })();
+
+    // small niceties: allow Enter key to add
+    document.getElementById('pburst').addEventListener('keydown',(e)=>{if(e.key==='Enter') addProcess()});
+
+    // expose closeModal to modal html buttons
+    window.closeModal = closeModal;
+  </script>
+<script>
+// Title Animation: first full fade-in, then typewriter with multi-color letters
+function runTitleAnimation() {
+  const title = document.getElementById('projectTitle');
+  const text = 'Process Management Visualiser';
+
+  // Step 1: Full fade-in
+  title.style.opacity = 0;
+  title.style.transition = 'opacity 1s ease';
+  title.textContent = text;
+  setTimeout(() => { title.style.opacity = 1; }, 200);
+
+  // Step 2: Typewriter animation
+  setTimeout(() => {
+    title.innerHTML = '';
+    const colors = ['#ff5757','#6a5acd','#00b894','#fdcb6e','#0984e3','#e84393'];
+    let i = 0;
+    function typeChar() {
+      if (i < text.length) {
+        const span = document.createElement('span');
+        span.textContent = text[i];
+        span.style.color = colors[i % colors.length];
+        span.style.opacity = 0;
+        span.style.transition = 'opacity 0.3s ease';
+        title.appendChild(span);
+        setTimeout(() => { span.style.opacity = 1; }, 10);
+        i++;
+        setTimeout(typeChar, 120);
+      } else {
+        // Restart animation after short delay
+        setTimeout(() => { runTitleAnimation(); }, 1200);
+      }
+    }
+    typeChar();
+  }, 1200);
+}
+
+window.addEventListener('DOMContentLoaded', runTitleAnimation);('DOMContentLoaded', () => {
+  const title = document.getElementById('projectTitle');
+  const text = title.textContent;
+
+  // Step 1: Full fade-in
+  title.style.opacity = 0;
+  title.style.transition = 'opacity 1s ease';
+  setTimeout(() => { title.style.opacity = 1; }, 200);
+
+  // Step 2: After fade-in, start character-by-character animation
+  setTimeout(() => {
+    title.innerHTML = '';
+
+    const colors = ['#ff5757','#6a5acd','#00b894','#fdcb6e','#0984e3','#e84393'];
+
+    let i = 0;
+    function typeChar() {
+      if (i < text.length) {
+        const span = document.createElement('span');
+        span.textContent = text[i];
+        span.style.color = colors[i % colors.length];
+        span.style.opacity = 0;
+        span.style.transition = 'opacity 0.3s ease';
+        title.appendChild(span);
+        setTimeout(() => { span.style.opacity = 1; }, 10);
+        i++;
+        setTimeout(typeChar, 120);
+      }
+    }
+    typeChar();
+  }, 1200);
+});
+</script>
+</body>
+</html>
